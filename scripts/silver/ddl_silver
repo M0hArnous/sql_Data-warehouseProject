@@ -1,0 +1,135 @@
+/*
+================================================================================
+Silver Layer Creation and Loading Script
+
+This script drops existing silver layer tables (if they exist) to avoid conflicts,
+then recreates the core dimension and fact tables in the silver layer with
+appropriate constraints. It loads cleaned and integrated data from the bronze layer.
+
+Tables Created and Loaded:
+- dim_aisles: Cleaned aisle information
+- dim_departments: Cleaned department information
+- dim_products: Product info with references to aisles and departments
+- fact_orders: Order metadata
+- fact_order_items: Combined order items from training and prior datasets
+
+This script is part of the ETL pipeline to transform raw bronze data into a clean,
+integrated silver layer for downstream analytics.
+
+================================================================================
+*/
+
+-- Drop dependent tables first to avoid FK conflicts
+IF OBJECT_ID('silver.fact_order_items', 'U') IS NOT NULL
+    DROP TABLE silver.fact_order_items;
+
+IF OBJECT_ID('silver.fact_orders', 'U') IS NOT NULL
+    DROP TABLE silver.fact_orders;
+
+IF OBJECT_ID('silver.dim_products', 'U') IS NOT NULL
+    DROP TABLE silver.dim_products;
+
+IF OBJECT_ID('silver.dim_aisles', 'U') IS NOT NULL
+    DROP TABLE silver.dim_aisles;
+
+IF OBJECT_ID('silver.dim_departments', 'U') IS NOT NULL
+    DROP TABLE silver.dim_departments;
+
+-- Create dim_aisles table
+CREATE TABLE silver.dim_aisles (
+    aisle_id INT PRIMARY KEY,
+    aisle_name NVARCHAR(50)
+);
+
+-- Load data into dim_aisles
+INSERT INTO silver.dim_aisles (aisle_id, aisle_name)
+SELECT DISTINCT
+    aisle_id,
+    TRIM(aisle) AS aisle_name
+FROM bronze.aisles_raw;
+
+-- Create dim_departments table
+CREATE TABLE silver.dim_departments (
+    department_id INT PRIMARY KEY,
+    department_name NVARCHAR(50)
+);
+
+-- Load data into dim_departments
+INSERT INTO silver.dim_departments (department_id, department_name)
+SELECT DISTINCT
+    department_id,
+    TRIM(department) AS department_name
+FROM bronze.departments_raw;
+
+-- Create dim_products table with foreign keys
+CREATE TABLE silver.dim_products (
+    product_id INT PRIMARY KEY,
+    product_name NVARCHAR(255),
+    aisle_id INT,
+    department_id INT,
+    CONSTRAINT FK_products_aisles FOREIGN KEY (aisle_id) REFERENCES silver.dim_aisles(aisle_id),
+    CONSTRAINT FK_products_departments FOREIGN KEY (department_id) REFERENCES silver.dim_departments(department_id)
+);
+
+-- Load data into dim_products
+INSERT INTO silver.dim_products (product_id, product_name, aisle_id, department_id)
+SELECT DISTINCT
+    p.product_id,
+    TRIM(p.product_name) AS product_name,
+    p.aisle_id,
+    p.department_id
+FROM bronze.products_raw p
+JOIN silver.dim_aisles a ON p.aisle_id = a.aisle_id
+JOIN silver.dim_departments d ON p.department_id = d.department_id
+WHERE p.product_name IS NOT NULL;
+
+-- Create fact_orders table
+CREATE TABLE silver.fact_orders (
+    order_id INT PRIMARY KEY,
+    user_id INT,
+    eval_set NVARCHAR(20),
+    order_number INT,
+    order_dow INT,
+    order_hour_of_day INT,
+    days_since_prior_order FLOAT
+);
+
+-- Load data into fact_orders
+INSERT INTO silver.fact_orders (
+    order_id,
+    user_id,
+    eval_set,
+    order_number,
+    order_dow,
+    order_hour_of_day,
+    days_since_prior_order
+)
+SELECT DISTINCT
+    order_id,
+    user_id,
+    eval_set,
+    order_number,
+    order_dow,
+    order_hour_of_day,
+    days_since_prior_order
+FROM bronze.orders_raw
+WHERE order_id IS NOT NULL;
+
+-- Create fact_order_items table
+CREATE TABLE silver.fact_order_items (
+    order_id INT,
+    product_id INT,
+    add_to_cart_order INT,
+    reordered INT
+    -- Optionally add foreign keys if desired:
+    -- CONSTRAINT FK_orderitems_orders FOREIGN KEY (order_id) REFERENCES silver.fact_orders(order_id),
+    -- CONSTRAINT FK_orderitems_products FOREIGN KEY (product_id) REFERENCES silver.dim_products(product_id)
+);
+
+-- Load data into fact_order_items (combine train + prior)
+INSERT INTO silver.fact_order_items (order_id, product_id, add_to_cart_order, reordered)
+SELECT order_id, product_id, add_to_cart_order, reordered FROM bronze.order_products_train_raw
+UNION ALL
+SELECT order_id, product_id, add_to_cart_order, reordered FROM bronze.order_products_prior_raw;
+
+PRINT 'Silver layer tables created and loaded successfully.';
