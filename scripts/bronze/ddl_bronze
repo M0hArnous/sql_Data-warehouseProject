@@ -1,1 +1,52 @@
 
+-- ============================================
+-- DDL Script for Bronze Layer Tables (Instacart)
+-- ============================================
+
+-- Table to store raw order metadata
+CREATE TABLE bronze.orders_raw (
+    order_id INT,                            -- Unique ID for each order
+    user_id INT,                             -- Customer ID who placed the order
+    eval_set NVARCHAR(20),                   -- Evaluation set (train/prior/test)
+    order_number INT,                        -- Order sequence number for the customer
+    order_dow INT,                           -- Day of week the order was placed (0=Sunday)
+    order_hour_of_day INT,                   -- Hour of the day the order was placed (0–23)
+    days_since_prior_order FLOAT             -- Days since the customer’s previous order
+);
+
+-- Table to store products in prior orders
+CREATE TABLE bronze.order_products_prior_raw (
+    order_id INT,                            -- Order ID
+    product_id INT,                          -- Product ID
+    add_to_cart_order INT,                   -- Sequence in which the product was added to cart
+    reordered INT                            -- 1 if the product was reordered, 0 otherwise
+);
+
+-- Table to store products in training orders
+CREATE TABLE bronze.order_products_train_raw (
+    order_id INT,                            -- Order ID
+    product_id INT,                          -- Product ID
+    add_to_cart_order INT,                   -- Sequence in which the product was added to cart
+    reordered INT                            -- 1 if the product was reordered, 0 otherwise
+);
+
+-- Drop and create table to store product metadata
+DROP TABLE IF EXISTS bronze.products_raw;
+CREATE TABLE bronze.products_raw (
+    product_id INT,                          -- Unique ID for the product
+    product_name VARCHAR(255),              -- Name of the product
+    aisle_id INT,                            -- ID of the aisle the product belongs to
+    department_id INT                        -- ID of the department the product belongs to
+);
+
+-- Table to store department reference data
+CREATE TABLE bronze.departments_raw (
+    department_id INT,                       -- Unique ID for department
+    department NVARCHAR(50)                  -- Name of the department
+);
+
+-- Table to store aisle reference data
+CREATE TABLE bronze.aisles_raw (
+    aisle_id INT,                            -- Unique ID for aisle
+    aisle NVARCHAR(50)                       -- Name of the aisle
+);
